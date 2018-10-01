@@ -4,80 +4,25 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Web.Script.Serialization;
-using VisualTeensy.Properties;
 
 namespace VisualTeensy.Model
 {
     public class Model
     {
-        public SetupData data { get; }
+        public ProjectData project { get; private set; }
+        public SetupData setup { get; private set; }
+
+        public LibManager libManager { get; private set; }
 
         public List<Board> boards { get; private set; }
         public Board selectedBoard { get; set; }
 
-        void loadSettings()
-        {
-            if (Settings.Default.updateNeeded)
-            {
-                Settings.Default.Upgrade();
-                Settings.Default.updateNeeded = false;
-                Settings.Default.Save();
-                Settings.Default.Reload();
-            }
-
-            data.loadSettings();
-            data.fromArduino = false;
-
-            if (String.IsNullOrWhiteSpace(data.arduinoBase))
-            {
-                data.arduinoBase = FileHelpers.findArduinoFolder();
-            }
-            if (String.IsNullOrWhiteSpace(data.projectBase))
-            {
-                var user = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-                String basePath = Path.Combine(user, "source", "new_project");
-
-                int i = 1;
-                data.projectBase = basePath;
-                while (Directory.Exists(data.projectBase))
-                {
-                    data.projectBase = $"{basePath}({i++})";
-                }
-            }
-            if (String.IsNullOrWhiteSpace(data.makeExePath))
-            {
-                var curDir = Directory.GetCurrentDirectory();
-                var makeExePath = Path.Combine(curDir, "make.exe");
-                if (File.Exists(makeExePath))
-                {
-                    data.makeExePath = makeExePath;
-                }
-            }
-            if (String.IsNullOrWhiteSpace(data.uplTyBase))
-            {
-                data.uplTyBase = FileHelpers.findTyToolsFolder();
-            }
-            if (data.arduinoBaseError == null)
-            {
-                if (String.IsNullOrWhiteSpace(data.uplPjrcBase)) data.uplPjrcBase = FileHelpers.getToolsFromArduino(data.arduinoBase);
-                if (String.IsNullOrWhiteSpace(data.boardTxtPath)) data.boardTxtPath = FileHelpers.getBoardFromArduino(data.arduinoBase);
-                if (String.IsNullOrWhiteSpace(data.coreBase)) data.coreBase = FileHelpers.getCoreFromArduino(data.arduinoBase);
-                if (String.IsNullOrWhiteSpace(data.compilerBase)) data.compilerBase = Path.Combine(FileHelpers.getToolsFromArduino(data.arduinoBase), "arm");
-            }
-
-            data.fromArduino = true;
-
-        }
-        public void saveSettings()
-        {
-            data.saveSettings();
-        }
-
+        
         public bool openProjectPath()
         {
             vtTransferData transferData;
 
-            var configFile = Path.Combine(data.projectBase, ".vscode", "visual_teensy.json");
+            var configFile = Path.Combine(project.path, ".vscode", "visual_teensy.json");
             try
             {
                 var reader = new StreamReader(configFile);
@@ -87,15 +32,26 @@ namespace VisualTeensy.Model
 
                 if (transferData != null)
                 {
-                    data.fromArduino = transferData.quickSetup;
-                    data.arduinoBase = transferData.arduinoBase;
-                    data.compilerBase = transferData.compilerBase;
-                    data.makeExePath = transferData.makeExePath;
+                    project.setupType = transferData.quickSetup;
+                    setup.arduinoBase = transferData.arduinoBase;
+                    project.compilerBase = transferData.compilerBase;
+                    setup.makeExePath = transferData.makeExePath;
 
-                    data.boardTxtPath = transferData.boardTxtPath.StartsWith("\\") ? Path.Combine(data.projectBase, transferData.boardTxtPath.Substring(1)) : transferData.boardTxtPath;
-                    data.coreBase = transferData.coreBase.StartsWith("\\") ? Path.Combine(data.projectBase, transferData.coreBase.Substring(1)) : transferData.coreBase;
+                    project.boardTxtPath = transferData.boardTxtPath.StartsWith("\\") ? Path.Combine(project.path, transferData.boardTxtPath.Substring(1)) : transferData.boardTxtPath;
+                    project.coreBase = transferData.coreBase.StartsWith("\\") ? Path.Combine(project.path, transferData.coreBase.Substring(1)) : transferData.coreBase;
 
                     parseBoardsTxt();
+
+
+
+                    var libs = libManager.repositories[0].libraries;
+
+                    foreach (string libName in transferData.libraries[0].libraries)
+                    {
+                        var lib = libs.FirstOrDefault(l => l.name == libName);
+                        if (lib != null) project.libraries.Add(lib);
+                    }
+
 
                     selectedBoard = boards?.FirstOrDefault(b => b.name == transferData.board.name);
                     if (selectedBoard != null)
@@ -114,28 +70,23 @@ namespace VisualTeensy.Model
                 generateFiles();
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 return false;
             }
-
-
-
-
-
         }
         public void generateFiles()
         {
-            data.makefile = data.tasks_json = data.props_json = null;
+            project.makefile = project.tasks_json = project.props_json = null;
 
-            bool ok = selectedBoard != null && data.uplTyBaseError == null && data.projectBaseError == null;
-            if (data.fromArduino)
+            bool ok = selectedBoard != null && setup.uplTyBaseError == null && project.pathError == null;
+            if (project.setupType == SetupTypes.quick)
             {
-                ok = ok && data.arduinoBaseError == null;
+                ok = ok && setup.arduinoBaseError == null;
             }
             else
             {
-                ok = ok && data.corePathError == null && data.compilerPathError == null;
+                ok = ok && project.corePathError == null && project.compilerPathError == null;
             }
 
             if (ok)
@@ -144,18 +95,22 @@ namespace VisualTeensy.Model
 
                 var options = selectedBoard.getAllOptions();
 
-                data.makefile = generateMakefile(options);
-                data.props_json = generatePropertiesFile(options);
-                data.vsSetup_json = generateVisualTeensySetup();
+                project.makefile = generateMakefile(options);
+                project.props_json = generatePropertiesFile(options);
+                project.vsSetup_json = generateVisualTeensySetup();
             }
-            data.tasks_json = generateTasksFile();
+            project.tasks_json = generateTasksFile();
         }
 
-        public Model()
+        public Model(ProjectData project, SetupData setup)
         {
+            this.project = project;
+            this.setup = setup;
+
             boards = new List<Board>();
-            data = new SetupData();
+
             loadSettings();
+            libManager = new LibManager(this.project, this.setup);
             if (!openProjectPath())
             {
                 parseBoardsTxt();
@@ -167,18 +122,20 @@ namespace VisualTeensy.Model
         public void parseBoardsTxt()
         {
             Console.WriteLine("parseBoardsTxt");
-            boards = FileContent.parse(data.boardTxtPath).Where(b => b.core == "teensy3").ToList();
+
+            string boardTxtPath = project.setupType == SetupTypes.quick ? setup.boardFromArduino : project.boardTxtPath;
+            boards = FileContent.parse(boardTxtPath).Where(b => b.core == "teensy3").ToList();
         }
         private string generateVisualTeensySetup()
         {
             var json = new JavaScriptSerializer();
-            return FileHelpers.formatOutput(json.Serialize(new vtTransferData(data, selectedBoard)));
+            return FileHelpers.formatOutput(json.Serialize(new vtTransferData(project, setup, selectedBoard)));
         }
         private string generateTasksFile()
         {
-            if (data.makeExePathError != null) return null;
+            if (setup.makeExePathError != null) return null;
 
-            string makePath = data.makeExePath;
+            string makePath = setup.makeExePath;
 
             var tasks = new tasksJson()
             {
@@ -228,7 +185,7 @@ namespace VisualTeensy.Model
         }
         private string generatePropertiesFile(Dictionary<string, string> options)
         {
-            if (data.compilerPathError != null)
+            if (project.compilerPathError != null)
             {
                 return null;
             }
@@ -240,12 +197,14 @@ namespace VisualTeensy.Model
                     new Configuration()
                     {
                         name = "VisualTeensy",
-                        compilerPath =  Path.Combine(data.compilerBase ,"bin","arm-none-eabi-gcc.exe").Replace('\\','/'),
+                        compilerPath =  Path.Combine(project.compilerBase ,"bin","arm-none-eabi-gcc.exe").Replace('\\','/'),
                         intelliSenseMode = "gcc-x64",
                         includePath = new List<string>()
                         {
-                            "${workspaceFolder}/src/**",
-                            data.coreBase?.Replace('\\','/') + "/**"
+                            "src/**",
+                            "lib/**",
+                            project.coreBase?.Replace('\\','/') + "/**",
+                            setup.libBase?.Replace('\\','/') + "/**"
                         },
                         defines = new List<string>()
                     }
@@ -254,7 +213,7 @@ namespace VisualTeensy.Model
 
 
 
-            if (options.ContainsKey("build.flag.defs"))
+            if (options.ContainsKey("build.flags.defs"))
             {
                 foreach (var define in options["build.flags.defs"].Split(new string[] { "-D" }, StringSplitOptions.RemoveEmptyEntries))
                 {
@@ -264,6 +223,8 @@ namespace VisualTeensy.Model
             addConfigOption(options, props, "F_CPU=", "build.fcpu");
             addConfigOption(options, props, "", "build.usbtype");
             addConfigOption(options, props, "LAYOUT_", "build.keylayout");
+            props.configurations[0].defines.Add("ARDUINO");
+
             //props.configurations[0].defines.Add("F_CPU=" + options["build.fcpu"]);
             //props.configurations[0].defines.Add(options["build.usbtype"]);
             //props.configurations[0].defines.Add("LAYOUT_" + options["build.keylayout"]);
@@ -281,15 +242,25 @@ namespace VisualTeensy.Model
             selectedBoard.optionSets.ForEach(o => mf.Append($"# {o.name,-18} {o.selectedOption?.name}\n"));
             mf.Append("#\n");
             mf.Append($"# {DateTime.Now.ToShortDateString()} {DateTime.Now.ToShortTimeString()}\n");
-            mf.Append("#******************************************************************************\n\n");
+            mf.Append("#******************************************************************************\n");
 
-            mf.Append($"TARGET_NAME := {data.projectName.Replace(" ", "_")}\n\n");
+            mf.Append("SHELL := cmd.exe\nexport SHELL\n\n");
+
+            mf.Append($"TARGET_NAME      := {project.name.Replace(" ", "_")}\n\n");
+
+            mf.Append($"LIBS_SHARED_BASE := {setup.libBaseShort}\n");
+            mf.Append($"LIBS_SHARED      := ");
+            project.libraries.ForEach(l => mf.Append($"{l.path} "));
+            mf.Append("\n\n");
+
+            mf.Append($"LIBS_LOCAL_BASE  := lib\n");
+            mf.Append($"LIBS_LOCAL       := \n\n");
 
             mf.Append(makeEntry("BOARD_ID    := ", "build.board", options) + "\n");
-            mf.Append($"CORE_BASE   := {((data.copyCore || (Path.GetDirectoryName(data.coreBase) == data.projectBase)) ? "core" : data.coreBaseShort)}\n");
-            mf.Append($"GCC_BASE    := {data.compilerBaseShort}\n");
-            mf.Append($"UPL_PJRC_B  := {data.uplPjrcBaseShort}\n");
-            mf.Append($"UPL_TYCMD_B := {data.uplTyBaseShort}\n\n");
+            mf.Append($"CORE_BASE   := {((project.copyCore || (Path.GetDirectoryName(project.coreBase) == project.path)) ? "core" : project.coreBaseShort)}\n");
+            mf.Append($"GCC_BASE    := {project.compilerBaseShort}\n");
+            mf.Append($"UPL_PJRC_B  := {setup.uplPjrcBaseShort}\n");
+            mf.Append($"UPL_TYCMD_B := {setup.uplTyBaseShort}\n\n");
 
             mf.Append(makeEntry("FLAGS_CPU   := ", "build.flags.cpu", options) + "\n");
             mf.Append(makeEntry("FLAGS_OPT   := ", "build.flags.optimize", options) + "\n");
@@ -307,7 +278,7 @@ namespace VisualTeensy.Model
             mf.Append(makeEntry("LD_SCRIPT   := ", "build.mcu", options) + ".ld\n");
 
             mf.Append("\n");
-            mf.Append(makeEntry("DEFINES     := ", "build.flags.defs", options) + "\n");
+            mf.Append(makeEntry("DEFINES     := ", "build.flags.defs", options) + " -DARDUINO=10807\n");
             mf.Append("DEFINES     += ");
             mf.Append(makeEntry("-DF_CPU=", "build.fcpu", options) + " " + makeEntry("-D", "build.usbtype", options) + " " + makeEntry("-DLAYOUT_", "build.keylayout", options) + "\n");
 
@@ -317,7 +288,7 @@ namespace VisualTeensy.Model
             mf.Append("S_FLAGS     := $(FLAGS_CPU) $(FLAGS_OPT) $(FLAGS_COM) $(DEFINES) $(FLAGS_S)\n");
             mf.Append("LD_FLAGS    := $(FLAGS_CPU) $(FLAGS_OPT) $(FLAGS_LSP) $(FLAGS_LD)\n");
             mf.Append("AR_FLAGS    := rcs\n");
-            mf.Append(Strings.makeFileEnd);
+            mf.Append(setup.makefile_fixed);
 
             return mf.ToString();
         }
@@ -333,8 +304,7 @@ namespace VisualTeensy.Model
                 return "";
             }
         }
-
-        void addConfigOption(Dictionary<string, string> options, PropertiesJson props, string prefix, string key)
+        private void addConfigOption(Dictionary<string, string> options, PropertiesJson props, string prefix, string key)
         {
             var option = options.FirstOrDefault(o => o.Key == key).Value;
 
@@ -342,6 +312,10 @@ namespace VisualTeensy.Model
             {
                 props.configurations[0].defines.Add(prefix + option);
             }
+        }
+        void loadSettings()
+        {
+            setup.libBase = Path.Combine(setup.arduinoBase ??"", "hardware", "Teensy", "avr", "libraries"); //HACK need to be user settable        
         }
     }
 }
