@@ -1,6 +1,8 @@
 ﻿using System;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -10,87 +12,14 @@ namespace VisualTeensy.Model
     {
         public static string arduinoPath { set; get; }
 
-        //public static string formatOutput(string jsonString)
-        //{
-        //    var stringBuilder = new StringBuilder();
 
-        //    bool escaping = false;
-        //    bool inQuotes = false;
-        //    int indentation = 0;
+        //Folders ----------------------------------------
 
-        //    foreach (char character in jsonString)
-        //    {
-        //        if (escaping)
-        //        {
-        //            escaping = false;
-        //            stringBuilder.Append(character);
-        //        }
-        //        else
-        //        {
-        //            if (character == '\\')
-        //            {
-        //                escaping = true;
-        //                stringBuilder.Append(character);
-        //            }
-        //            else if (character == '\"')
-        //            {
-        //                inQuotes = !inQuotes;
-        //                stringBuilder.Append(character);
-        //            }
-        //            else if (!inQuotes)
-        //            {
-        //                if (character == ',')
-        //                {
-        //                    stringBuilder.Append(character);
-        //                    stringBuilder.Append("\n");
-        //                    stringBuilder.Append(' ', indentation);
-        //                    stringBuilder.Append(' ', indentation);
-        //                }
-        //                else if (character == '[' || character == '{')
-        //                {
-        //                    stringBuilder.Append(character);
-        //                    stringBuilder.Append("\r\n");
-        //                    stringBuilder.Append(' ', ++indentation);
-        //                    stringBuilder.Append(' ', indentation);
-        //                }
-        //                else if (character == ']' || character == '}')
-        //                {
-        //                    stringBuilder.Append("\r\n");
-        //                    stringBuilder.Append(' ', --indentation);
-        //                    stringBuilder.Append(' ', indentation);
-        //                    stringBuilder.Append(character);
-        //                }
-        //                else if (character == ':')
-        //                {
-        //                    stringBuilder.Append(character);
-        //                    stringBuilder.Append(' ');
-        //                    //stringBuilder.Append(' ');
-        //                }
-        //                else
-        //                {
-        //                    stringBuilder.Append(character);
-        //                }
-        //            }
-        //            else
-        //            {
-        //                stringBuilder.Append(character);
-        //            }
-        //        }
-        //    }
+        public static string arduinoPrefsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Arduino15");
 
-        //    return stringBuilder.ToString();
-        //}
-
-        ////public static string getBoardFromArduino()
-        ////{
-        ////    return getBoardFromArduino(arduinoPath);
-        ////}
-
-            
         public static string getSketchbookFolder()
         {
-            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var preferencesPath = Path.Combine(localAppData, "Arduino15", "preferences.txt");
+            var preferencesPath = Path.Combine(arduinoPrefsPath, "preferences.txt");
 
             string sketchbookPath = "";
 
@@ -151,7 +80,6 @@ namespace VisualTeensy.Model
 
             return null;
         }
-
         public static string findCLIFolder()
         {
             string folder;
@@ -164,6 +92,9 @@ namespace VisualTeensy.Model
 
             return null;
         }
+
+        // Download libraries ----------------------------
+
 
         private static bool isArduinoFolder(string folder)
         {
@@ -198,7 +129,7 @@ namespace VisualTeensy.Model
         }
         private static bool isCLIFolder(string folder)
         {
-            var cli = Path.Combine(folder, "teensu_loader_cli.exe");
+            var cli = Path.Combine(folder, "teensy_loader_cli.exe");
             return (File.Exists(cli));
         }
 
@@ -227,6 +158,54 @@ namespace VisualTeensy.Model
                 }
             }
             return null;
+        }
+
+        public static void copyFilesRecursively(DirectoryInfo source, DirectoryInfo target)
+        {
+            foreach (DirectoryInfo dir in source.GetDirectories())
+            {
+                copyFilesRecursively(dir, target.CreateSubdirectory(dir.Name));
+            }
+
+            foreach (FileInfo file in source.GetFiles())
+            {
+                string targetFileName = Path.Combine(target.FullName, file.Name);
+                if (!File.Exists(targetFileName))
+                {
+                    file.CopyTo(Path.Combine(target.FullName, file.Name));
+                }
+            }
+        }
+        public static bool downloadLibrary(Library lib, string targetFolder)
+        {
+            string versionedLibFolder = Path.Combine(targetFolder, Path.GetFileNameWithoutExtension(lib.url));
+            string unversionedLibFolder = versionedLibFolder.Substring(0, versionedLibFolder.LastIndexOf('-'));
+            if (Directory.Exists(unversionedLibFolder)) return false;
+
+            WebClient client = null;
+            MemoryStream zippedStream = null;
+            ZipArchive libArchive = null;
+            try
+            {
+                client = new WebClient();
+                zippedStream = new MemoryStream(client.DownloadData(lib.url));
+                libArchive = new ZipArchive(zippedStream);
+                ZipFileExtensions.ExtractToDirectory(libArchive, targetFolder);
+
+                Directory.Move(versionedLibFolder, unversionedLibFolder);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                return false;
+            }
+            finally
+            {
+                if (Directory.Exists(versionedLibFolder)) Directory.Delete(versionedLibFolder);
+                client?.Dispose();
+                zippedStream?.Dispose();
+                libArchive?.Dispose();
+            }
         }
 
         [DllImport("kernel32", EntryPoint = "GetShortPathName", CharSet = CharSet.Auto, SetLastError = true)]

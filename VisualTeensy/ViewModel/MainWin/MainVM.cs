@@ -1,11 +1,4 @@
 ﻿using VisualTeensy.Model;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Globalization;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.IO;
 using System.Windows;
 
@@ -13,19 +6,26 @@ namespace ViewModel
 {
     class MainVM : BaseViewModel
     {
+        public SetupTabVM setupTabVM { get; }
+        public ProjectTabVM projecTabVM { get; }
+        public LibrariesTabVM librariesTabVM { get; }
+
         public RelayCommand cmdFileOpen { get; set; }
         void doFileOpen(object path)
         {            
-            model.openFile(path as string);
+            project.openProject(path as string);
             projecTabVM.update();
+            librariesTabVM.update();
             ActionText = Directory.Exists(projectPath) ? "Update Project" : "Generate Project";
             OnPropertyChanged("");            
         }
+
         public RelayCommand cmdFileNew { get; set; }
         void doFileNew(object o)
         {
-            model.newFile();
+            project.newProject();
             projecTabVM.update();
+            librariesTabVM.update();
             ActionText = "Generate Project";
             OnPropertyChanged("");           
         }
@@ -36,37 +36,36 @@ namespace ViewModel
             Application.Current.Shutdown();
         }
 
-        public String ActionText { get; private set; }
+        public string ActionText { get; private set; }
 
-        public String projectName => model.project.name;
-        public String projectPath => model.project.path;
+        public string projectName => project.name;
+        public string projectPath => project.path;
 
-        public SetupTabVM setupTabVM { get; }
-        public ProjectTabVM projecTabVM { get; }
 
-        public String Title
+        public string Title
         {
             get
             {
                 var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-                return $"VisualTeensy V{v.Major}.{v.Minor} - lunOptics";
+                return $"VisualTeensy V{v.Major}.{v.Minor}.{v.Build} - lunOptics";
             }
         }
 
-        public MainVM(Model model = null)
+        public MainVM(Project project = null)
         {
+            this.project = project;
+
+            projecTabVM = new ProjectTabVM(project);
+            setupTabVM = new SetupTabVM(project);
+            librariesTabVM = new LibrariesTabVM(project);
+
             cmdFileOpen = new RelayCommand(doFileOpen);
             cmdFileNew = new RelayCommand(doFileNew);
-            cmdClose = new RelayCommand(doClose);
-
-            this.model = model;
-            
-            projecTabVM = new ProjectTabVM(model);
-            setupTabVM = new SetupTabVM(model);
+            cmdClose = new RelayCommand(doClose);                       
                        
             //setupTabVM.PropertyChanged += (s, e) => projecTabVM.updateFiles();            
         }
 
-        public Model model { get; }
+        public Project project { get; }
     }
 }

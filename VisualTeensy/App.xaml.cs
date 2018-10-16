@@ -68,13 +68,13 @@ namespace VisualTeensy
         {
             XmlConfigurator.Configure();
 
-            var repository = (Hierarchy) LogManager.GetRepository();
+            var repository = (Hierarchy)LogManager.GetRepository();
             repository.Threshold = Level.All;
 
             var fa = repository.Root.Appenders.OfType<FileAppender>().FirstOrDefault();
 
             fa.File = Path.Combine(Path.GetTempPath(), "VisualTeensy.log");
-            fa.ActivateOptions();            
+            fa.ActivateOptions();
 
 
             var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
@@ -88,12 +88,23 @@ namespace VisualTeensy
             try
             {
                 var setupData = loadSetup();
-                var project = ProjectData.open(Settings.Default.lastProject, setupData) ?? ProjectData.getDefault(setupData);
+                //var project = Configuration.open(Settings.Default.lastProject, setupData) ?? Configuration.getDefault(setupData);
 
-                //  var project = Project.open(Settings.Default.lastProject, setupData) == false) project = ProjectData.getDefault(setupData);
+                setupData.libBase = Path.Combine(Path.GetDirectoryName(setupData.arduinoBoardsTxt), "libraries");
+                var libManager = new LibManager(setupData);
 
-                var model = new Model.Model(project, setupData);
-                var mainVM = new MainVM(model);
+                var project = new Model.Project(setupData, libManager);
+
+                if (!string.IsNullOrWhiteSpace(Settings.Default.lastProject))
+                {
+                    project.openProject(Settings.Default.lastProject);
+                }
+                else
+                {
+                    project.newProject();
+                }
+
+                var mainVM = new MainVM(project);
 
                 var mainWin = new MainWindow()
                 {
@@ -106,13 +117,10 @@ namespace VisualTeensy
 
                 mainWin.ShowDialog();
 
-                // close open file display windows // hack, move elsewhere
-                Current?.Windows.OfType<FileDisplayWindow>()?.ToList().ForEach(w => w.Close());
-
                 saveSetup(setupData);
 
                 Settings.Default.mainWinBounds = new Rect(mainWin.Left, mainWin.Top, mainWin.Width, mainWin.Height);
-                Settings.Default.lastProject = model.project.path;
+                Settings.Default.lastProject = project.path;
                 Settings.Default.Save();
 
                 log.Info("Closed");
@@ -120,7 +128,7 @@ namespace VisualTeensy
             catch (Exception ex)
             {
                 log.Fatal("Unhandled exception", ex);
-                MessageBox.Show("Unhandled Exception!, Aborting...");
+                MessageBox.Show(ex.Message + "\n" + ex.ToString());
             }
         }
 
