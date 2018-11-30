@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Linq;
-using VisualTeensy.Model;
+using vtCore;
 
 namespace ViewModel
 {
@@ -26,13 +26,13 @@ namespace ViewModel
 
         public ObservableCollection<Library> projectLibraries { get; }
 
-        public LibrariesTabVM(Project project)
+        public LibrariesTabVM(IProject project, LibManager libManager)
         {
             this.project = project;
 
             cmdDel = new RelayCommand(doDel);
 
-            repositories = project.libManager.repositories.Select(r => new RepositoryVM(r)).ToList();
+            repositories = libManager.repositories.Select(r => new RepositoryVM(r)).ToList();
             selectedRepository = repositories.FirstOrDefault();
 
 
@@ -75,8 +75,7 @@ namespace ViewModel
 
                 default:
                     break;
-            }
-            project.generateFiles();
+            }           
         }
 
         public void DragOver(IDropInfo dropInfo)
@@ -108,6 +107,6 @@ namespace ViewModel
             }
             projectLibraries.CollectionChanged += projectLibrariesChanged;
         }
-        Project project;
+        IProject project;
     }
 }

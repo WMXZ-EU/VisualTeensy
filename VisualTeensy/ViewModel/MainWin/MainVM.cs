@@ -1,6 +1,6 @@
-﻿using VisualTeensy.Model;
-using System.IO;
+﻿using System.IO;
 using System.Windows;
+using vtCore;
 
 namespace ViewModel
 {
@@ -9,15 +9,15 @@ namespace ViewModel
         public SetupTabVM setupTabVM { get; }
         public ProjectTabVM projecTabVM { get; }
         public LibrariesTabVM librariesTabVM { get; }
-
+       
         public RelayCommand cmdFileOpen { get; set; }
         void doFileOpen(object path)
-        {            
+        {
             project.openProject(path as string);
             projecTabVM.update();
             librariesTabVM.update();
             ActionText = Directory.Exists(projectPath) ? "Update Project" : "Generate Project";
-            OnPropertyChanged("");            
+            OnPropertyChanged("");
         }
 
         public RelayCommand cmdFileNew { get; set; }
@@ -27,7 +27,7 @@ namespace ViewModel
             projecTabVM.update();
             librariesTabVM.update();
             ActionText = "Generate Project";
-            OnPropertyChanged("");           
+            OnPropertyChanged("");
         }
 
         public RelayCommand cmdClose { get; set; }
@@ -51,21 +51,29 @@ namespace ViewModel
             }
         }
 
-        public MainVM(Project project = null)
+        public MainVM(IProject project, LibManager libManager, SetupData setup)
         {
             this.project = project;
+            this.libManager = libManager;
+            this.setup = setup;
 
-            projecTabVM = new ProjectTabVM(project);
-            setupTabVM = new SetupTabVM(project);
-            librariesTabVM = new LibrariesTabVM(project);
-
+            projecTabVM = new ProjectTabVM(project,libManager,setup);
+            setupTabVM = new SetupTabVM(project,setup);
+            librariesTabVM = new LibrariesTabVM(project, libManager);
+          
             cmdFileOpen = new RelayCommand(doFileOpen);
             cmdFileNew = new RelayCommand(doFileNew);
-            cmdClose = new RelayCommand(doClose);                       
-                       
-            //setupTabVM.PropertyChanged += (s, e) => projecTabVM.updateFiles();            
+            cmdClose = new RelayCommand(doClose);
+
+            setupTabVM.PropertyChanged += (s, e) =>
+            {
+                projecTabVM.updateFiles();
+                projecTabVM.OnPropertyChanged("");
+            };
         }
 
-        public Project project { get; }
+        public LibManager libManager { get; }
+        public SetupData setup { get; }
+        public IProject project { get; }
     }
 }

@@ -1,6 +1,6 @@
 ﻿using log4net;
 using log4net.Appender;
-using log4net.Config;
+//using log4net.Config;
 using log4net.Core;
 using log4net.Repository.Hierarchy;
 using System;
@@ -10,8 +10,8 @@ using System.Linq;
 using System.Reflection;
 using System.Windows;
 using ViewModel;
-using VisualTeensy.Model;
 using VisualTeensy.Properties;
+using vtCore;
 
 namespace VisualTeensy
 {
@@ -44,9 +44,13 @@ namespace VisualTeensy
             setupData.makeExePath = String.IsNullOrWhiteSpace(Settings.Default.makeExePath) ? Path.Combine(Directory.GetCurrentDirectory(), "make.exe") : Settings.Default.makeExePath;
             setupData.libBase = String.IsNullOrWhiteSpace(Settings.Default.libBase) ? Path.Combine(Helpers.getSketchbookFolder() ?? "", "libraries") : Settings.Default.libBase;
 
-            using (var reader = new StreamReader(Assembly.GetExecutingAssembly().GetManifestResourceStream("VisualTeensy.Embedded.makefile")))
+            using (var reader = new StreamReader(Assembly.GetExecutingAssembly().GetManifestResourceStream("VisualTeensy.Embedded.makefile_make")))
             {
                 setupData.makefile_fixed = reader.ReadToEnd();
+            }
+            using (var reader = new StreamReader(Assembly.GetExecutingAssembly().GetManifestResourceStream("VisualTeensy.Embedded.makefile_builder")))
+            {
+                setupData.makefile_builder = reader.ReadToEnd();
             }
             Helpers.arduinoPath = setupData.arduinoBase;
 
@@ -66,34 +70,29 @@ namespace VisualTeensy
 
         protected override void OnStartup(StartupEventArgs e)
         {
-            XmlConfigurator.Configure();
+            CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.GetCultureInfo("en-US");
 
+            log4net.Config.XmlConfigurator.Configure();
             var repository = (Hierarchy)LogManager.GetRepository();
             repository.Threshold = Level.All;
-
             var fa = repository.Root.Appenders.OfType<FileAppender>().FirstOrDefault();
-
             fa.File = Path.Combine(Path.GetTempPath(), "VisualTeensy.log");
             fa.ActivateOptions();
-
-
+            
             var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
             log.Info($"------------------------------------------");
             log.Info($"Startup v{v.Major}.{v.Minor} ({v.Revision})");
 
-            CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.GetCultureInfo("en-US");
             base.OnStartup(e);
-            //AppDomain.CurrentDomain.AssemblyResolve += CurrentDomain_AssemblyResolve;
-
+            
             try
             {
-                var setupData = loadSetup();
-                //var project = Configuration.open(Settings.Default.lastProject, setupData) ?? Configuration.getDefault(setupData);
+                var setup = loadSetup();               
+                setup.libBase = Path.Combine(Path.GetDirectoryName(setup.arduinoBoardsTxt), "libraries");
+               
 
-                setupData.libBase = Path.Combine(Path.GetDirectoryName(setupData.arduinoBoardsTxt), "libraries");
-                var libManager = new LibManager(setupData);
-
-                var project = new Model.Project(setupData, libManager);
+                var  libManager = Factory.makeLibManager(setup);
+                var project =  Factory.makeProject(setup, libManager);
 
                 if (!string.IsNullOrWhiteSpace(Settings.Default.lastProject))
                 {
@@ -104,7 +103,7 @@ namespace VisualTeensy
                     project.newProject();
                 }
 
-                var mainVM = new MainVM(project);
+                var mainVM = new MainVM(project, libManager, setup);
 
                 var mainWin = new MainWindow()
                 {
@@ -117,7 +116,7 @@ namespace VisualTeensy
 
                 mainWin.ShowDialog();
 
-                saveSetup(setupData);
+                saveSetup(setup);
 
                 Settings.Default.mainWinBounds = new Rect(mainWin.Left, mainWin.Top, mainWin.Width, mainWin.Height);
                 Settings.Default.lastProject = project.path;

@@ -16,23 +16,24 @@ namespace VisualTeensy
         {
             InitializeComponent();
 
-            Loaded += (s, e) =>
-            {
-                var dc = DataContext as ProjectTabVM;
-                if (dc != null)
-                {
-                    dc.OnPropertyChanged("");
-                }
-            };
+            //Loaded += (s, e) =>
+            //{
+            //    var dc = DataContext as ProjectTabVM;
+            //    if (dc != null)
+            //    {
+            //       // dc.update();
+            //        //dc.OnPropertyChanged("");
+            //    }
+            //};
         }
 
-        private void openOutputClick(object sender, RoutedEventArgs e)
-        {
-            var vm = DataContext as ProjectTabVM;
-            var dlg = new SaveProjectWin(new SaveWinVM(vm.project));
+        //private void openOutputClick(object sender, RoutedEventArgs e)
+        //{
+        //    var vm = DataContext as ProjectTabVM;
+        //    var dlg = new SaveProjectWin(new SaveWinVM(vm.project, vm.lib));
 
-            dlg.ShowDialog();
-        }
+        //    dlg.ShowDialog();
+        //}
 
         private void StackPanel_Checked(object sender, RoutedEventArgs e)
         {
